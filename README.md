@@ -1,7 +1,7 @@
-# focus
-##Very small window switcher and program starter written in bash.
+# focus (: simple pride and joy :)
+Very small window switcher and program starter written in bash.
 
-## This should be the most used program by any keyboard user.
+## focus should be the most used program by any keyboard user.
 
 * focus eliminates need to activate programs or choose windows via a desktop.
 * focus goes staright to an exising window via the window manager or executing a command.

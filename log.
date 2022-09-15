@@ -1,0 +1,227 @@
+#!/bin/bash
+
+# shellcheck disable=SC2128 # Expanding an array without an index only gives the first element.
+# shellcheck disable=SC2145 # Argument mixes string and array. Use * or separate argument.
+# shellcheck disable=SC2178 # Variable was used as an array but is now assigned a string.
+
+shopt -s localvar_unset # If set, calling unset on local variables in previous function scopes marks them so subsequent lookups find them unset until that function returns. This is identical to the behavior of unsetting local variables at the current function scope.
+
+########
+# colors
+########
+
+declare -A fgColor=(
+[reset]=$(tput sgr 0)
+[DkGray]=$(tput setaf 0)
+[DkRed]=$(tput setaf 1)
+[DkGreen]=$(tput setaf 2)
+[DkYellow]=$(tput setaf 3)
+[DkBlue]=$(tput setaf 4)
+[DkPurple]=$(tput setaf 5)
+[DkCyan]=$(tput setaf 6)
+[DkWhite]=$(tput setaf 7)
+[Gray]=$(tput setaf 8)
+[Red]=$(tput setaf 9)
+[Green]=$(tput setaf 10)
+[Yellow]=$(tput setaf 11)
+[Blue]=$(tput setaf 12)
+[Purple]=$(tput setaf 13)
+[Cyan]=$(tput setaf 14)
+[White]=$(tput setaf 15))
+
+fgColor+=(
+[Olive]=${fgColor[DkGreen]}
+[Gold]=${fgColor[DkYellow]})
+	
+###################
+# messageProcessor
+###################
+
+MdocLog() {
+	local -r MdocCause 'Caused by problem with arguments or other incoming data.'
+	local -r MdocOptionWordage='Generated in conjunction with a command line option, literal or injected.'
+	local -r MdocOptionCause='Customarily caused by a problem with the value associated with an option.'
+  cat <<-EOF
+.TP
+.BI "-v|--verbose " [[+-=]ECHO-LEVEL|ECHO-NAME]
+Set the verbosity level which goes into effect after the option is processed.
+Without value, then increment verbosity level.
+With +, then add to verbosity level.
+With -, then subtract from verbosity level.
+With = or plain verbosity level integer, then set verbosity level.
+With verbosity level name (shown below as = name = (case sensitive)), set the verbosity level.
+.PD 0
+.IP 0. 3
+$eLogCode = Code = For verbosing coding errors when a section of code is reached which should have been impossible to reach.
+Missing, bad, or malformed arguments or input data should never cause this error.
+When previous hard-code has limited value possibilities...
+If is good enough to test most possible values, assuming the remainder in the else clause.
+It is better to test every possible value, creating a code error in the else clause.
+.IP 0. 3
+$eLogError = Error = For verbosing errors whose severity recommends halting the process.
+$MdocCause
+.IP 0. 3
+$eLogErrorOption = ErrorOption = For verbosing errors $MdocOptionWordage.
+$MdocOptionCause
+.IP 0. 3
+$eLogWarn = Warn = For verbosing warnings whose severity believes that the request can be skipped and the process continued.
+$MdocCause
+.IP 0. 3
+$eLogWarnOption = WarnOption = For verbosing warnings $MdocOptionWordage.
+$MdocOptionCause
+.IP 0. 3
+$eLogQuiet = Quiet = Set to this level to hide non-error verbosity.
+Verbosing at this level generates an error.
+.IP 0. 3
+$eLog = '' = For verbosing expected output.
+This is for typical and expected output of data which should be machine readable.
+.IP 0. 3
+$eLogDetail = Detail = For verbosing extra output details.
+.IP 0. 3
+$eLogLabel = Label = For verbose headers labeling nearby output.
+.IP 0. 3
+$eLogMile = Mile = For verbosing milestones and inner results.
+.IP 0. 3
+$eLogOption = Option = For verbosing choices $MdocOptionWordage.
+.IP 0. 3
+$eLogDebug = Debug = For verbosing debugging information which may be useful for debugging.
+.IP 0. 3
+$eLogComment = Comment = For verbosing trivial information which is most useful as a code comment.
+.PD 1
+EOF
+}
+
+declare -i LOG_LEVEL # verbosity level
+declare -ir eLogCode=-6 # hard-code logic error which 'cannot', but did happen
+declare -ir eLogError=-5 # general error
+declare -ir eLogErrorOption=-4 # error due to option
+declare -ir eLogWarn=-3 # general warning
+declare -ir eLogWarnOption=-2 # warning due to option
+declare -ir eLogQuiet=-1 # quietable without loss
+declare -ir eLog=0 # informational messages below # unwanted messages above
+declare -ir eLogDetail=1 # detailed information
+declare -ir eLogLabel=2 # data labels
+declare -ir eLogMile=3 # milesone marker 
+declare -ir eLogNote=4 # note mrker
+declare -ir eLogOption=5 # opton marker
+declare -ir eLogDebug=6 # debugging mrker
+declare -ir eLogComment=7 # coment marker
+declare -ir eLogAll="$eLogComment"
+
+fgColor+=(
+[Log$eLogCode]=${fgColor[Cyan]}
+[Log$eLogError]=${fgColor[Red]}
+[Log$eLogErrorOption]=${fgColor[Red]}
+[Log$eLogWarn]=${fgColor[Purple]}
+[Log$eLogWarnOption]=${fgColor[Purple]}
+#[Log$eLogQuiet]=
+#[Log$eLog=0]=
+#[Log$eLogDetail]=
+[Log$eLogLabel]=${fgColor[White]}
+[Log$eLogMile]=${fgColor[Yellow]}
+[Log$eLogNote]=${fgColor[DkCyan]}
+[Log$eLogOption]=${fgColor[Gold]}
+[Log$eLogDebug]=${fgColor[Blue]}
+[Log$eLogComment]=${fgColor[DkPurple]})
+
+Log() { # [-n] [-c] LEVEL MESSAGE...
+	# do nothing of wanted level is not high enough
+	local zNoNew # do not end with newline (expecting -c for following information)
+	local zNoLabel # continue previous (previous Log assumed -n and identical level)
+	while [[ "$1" =~ ^-[nc]{1,2}$ ]]; do
+		case "$1" in
+			-cn) zNoNew=- ;&
+			-c) zNoLabel=- ;;
+			-nc) zNoLabel=- ;&
+			-n) zNoNew=- ;&
+		esac
+		shift
+	done
+	[[ "$1" -gt "$LOG_LEVEL" ]] && return
+	# redirect output according to level
+	if [[ "$1" -lt "$eLogQuiet" ]]; then
+		>&2 LogDump "$@"
+	elif [[ "$1" -gt "$eLogQuiet" ]]; then
+		>&"${BASH_XTRACEFD:-2}" LogDump "$@"
+	else
+		LogDump "$@"
+	fi
+}
+
+LogDump() { # LEVEL MESSAGE...
+	# primitive of Log (does not allow flags)
+	if [[ -z "$zNoLabel" ]]; then
+		if [[ "$1" -lt "$eLogWarn" ]]; then
+			local -i zDepth=0
+			for zFunction in "${FUNCNAME[@]:1}"; do
+				printf '%d %s: %s()\n' "${BASH_LINENO[$zDepth]}" "${BASH_SOURCE[$((zDepth+=1))]}" "$zFunction"
+			done
+		fi
+		printf '%s' "${fgColor[Log$1]}"
+		case "$1" in
+			"$eLogCode") printf '%s' "*** $BASENAME Coding Error: " ;;
+			"$eLogError") printf '%s' "*** $BASENAME Error: " ;;
+			"$eLogErrorOption")
+				printf '%s' "*** $BASENAME ${OPTION@Q}"
+				[[ "${REPLY+a}" ]] && printf '%s' "=${REPLY@Q}"
+				printf '%s' " Error:"
+				;;
+			"$eLogWarn") printf '%s' "** $BASENAME Warn: " ;;
+			"$eLogWarnOption")
+				printf '%s' "*** $BASENAME ${OPTION@Q}"
+				[[ "${REPLY+a}" ]] && printf '%s' "=${REPLY@Q}"
+				printf '%s' " Warn:"
+				;;
+			"$eLogQuiet") Log "$eLogError" "Never message at verbosity Quiet ${eLogQuiet@Q}." "${@:2}" ;;
+			"$eLog") ;;
+			"$eLogDetail") ;;
+			"$eLogLabel") ;;
+			"$eLogMile") ;;
+			"$eLogNote") printf 'Note: ' ;;
+			"$eLogOption")
+				printf '%s' "... $BASENAME ${OPTION@Q}"
+				[[ "${REPLY+a}" ]] && printf '%s' "=${REPLY@Q}"
+				printf '%s' ":"
+				;;
+			"$eLogDebug") printf '%s' "$BASENAME Debug: " ;;
+			"$eLogComment") printf '%s' "$BASENAME Comment: " ;;
+			*) Log "$eLogError" "Unknown log level ${1@Q}." "${@:2}"
+		esac
+		printf '%s' "${fgColor[Log$1]+${fgColor[reset]}}"
+	fi
+	if [[ -z "$zNoNew" ]]; then
+		printf '%s\n' "${@:2}"
+	else
+		local IFS=$'\n'
+		printf '%s' "${*:2}"
+	fi
+}
+
+TheLogLevel() { # [REPLY]
+   case "$#" in
+      0) printf '%s' "$LOG_LEVEL" ;;
+      1) case "${1:0:1}" in
+		      '')
+			      Log "$eLogOption" "Incrementing verbosity level from ${LOG_LEVEL@Q}."
+			      LOG_LEVEL+=1 ;;
+		      +|-)
+			      Log "$eLogOption" "Incrementing verbosity level by ${REPLY@Q} from ${LOG_LEVEL@Q}."
+			      LOG_LEVEL+="$1" ;;
+		      [0-9])
+			      Log "$eLogOption" "Setting verbosity level to ${1@Q} from ${LOG_LEVEL@Q}."
+			      LOG_LEVEL="$1" ;;
+		      *)
+			      local -n zEnumeration="eLog$1"
+			      if [[ -z "${zEnumeration+a}" ]]; then
+				      zEnumeration="sed -e 's/eLog//' <(printf ' %q' ${!eLog@}"
+				      Log "$eLogWarnOption" "Undefined enumeration postfix ${!REPLY@Q}. Expecting one of$zEnumeration."
+			      else
+				      Log "$eLogOption" "Setting verbosity level to ${zEnumeration@Q} from ${LOG_LEVEL@Q}."
+				      LOG_LEVEL="$zEnumeration"
+			      fi ;;
+	      esac
+         ;;
+      *) Error 1 "Unknown Parameter Count $#"
+   esac
+}
+

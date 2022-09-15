@@ -42,6 +42,8 @@ focus -v my-program
 
 # @see code for more information
 
+Note: x, which starts up emacs (has nothing to do with x11), is also included because I found emacsclient to be so difficult that I created x which uses focus, not the other way around.
 
-
+# Please report bugs.
+# Only tested with openbox.
 

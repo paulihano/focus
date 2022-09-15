@@ -18,7 +18,7 @@ focus font-manager
 
 focus -p x-terminal-emulator terminator
 * The -p allows the program to have another name.
-* terminator may my declared terminal I use, but managers start it via x-terminal-emumator.
+* terminator is my defaulj terminal, so managers start it via x-terminal-emumator.
 
 focus -p thunderbird-default thunderbird
 * This will rotate every window opened by thunderbird.

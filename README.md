@@ -16,33 +16,37 @@ focus font-manager
 * This single argument causes the next window opened by font-manager to become the focused window.
 * If no such window exists, then font-manager is executed (which opens such a window).
 
-focus -p x-terminal-emulator terminator
-* The -p allows the program to have another name.
-* terminator is my defaulj terminal, so managers start it via x-terminal-emumator.
+focus -n x-terminal-emulator terminator
+* The -n allows the program to have another name.
+* Windows opened by managers via x-terminal-emumator are named x-terminal-emumator.
 
-focus -p thunderbird-default thunderbird
-* This will rotate every window opened by thunderbird.
+focus -n thunderbird-default thunderbird
+* thunderbird claims its windows are opened by thunderbird-default.
+* Use -v to see what the options must be.
 
-focus -c 2 -p x-terminal-emulator terminator
-* The -c indicates that 2 instanes of such windows may be open.
-* If the only matching window is currently focused, then 'terminator' is executed again to create another window like it.
+focus -n Firefox-esr firefox-esr
+* The extended regular expressions are case sensitive
 
-focus -w "debian.ods - LibreOffice Calc" libreoffice /0/debian.ods
-* This causes the next window whose title contains 'debian.ods - LibreOffice Calc' to be focused.
-* If no such window exists, then 'libreoffice /0/debian.ods' is bash executed (window opens such a window).
+focus -c 2 -n Firefox-esr -n x-www-browser firefox-esr
+* The -c 2 indicates that 2 instanes of such windows may be opened via the command.
+* If the only matching window is currently focused, then 'firefox-esr' is executed again to create another window like it.
 
-focus -c 0 -p "(feh|ffplay|mupdf|evince|totem)"
-* This argument manner is for opening windows created via terminal commands.
+focus -t "debian.ods - LibreOffice Calc" libreoffice /0/debian.ods
+* This causes the next window whose title is 'debian.ods - LibreOffice Calc' to be focused.
+* If no such window exists, then 'libreoffice /0/debian.ods' is bash executed (opens the window).
+
+focus -c 0 -n "(feh|ffplay|mupdf|evince|totem)"
+* These arguments open windows created via many terminal commands.
 * The window search is always an extended expression.
 * This causes the next window whose process name matches feh or ffplay or mupdf or evince or totem to be focused.
 * The lack of a command and the -c 0 both eliminate the execution of any command if such a window does not exist.
 
-focus -v my-program
-* The -v causes window information to be output so that you can determine what you might need tor -p and -w.
+focus -v
+* The -v causes window information to be output so that you can determine what you might need tor -t and -n.
 
 # @see code for more information
 
-Note: x, which starts up emacs (has nothing to do with x11), is also included because I found emacsclient to be so difficult that I created x which uses focus, not the other way around.
+Note: x, which I use to start up emacs (has nothing to do with x11), is also included because I found emacsclient to be so difficult that I created x which uses focus, not the other way around.
 
 # Please report bugs.
 # Only tested with openbox.

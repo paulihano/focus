@@ -2,13 +2,14 @@
 #
 # focus
 #   [-c|--processCount COUNT] # maximum number of processes to automatically start at once. Default 1 (0 will not start any new process (search only)).
-#   [-p|--processName PROCESS_NAME] # extended regular expression to match the process name. Multiple occurrences build (...|...). If PROCESS_NAME is used but produces no matches, COMMAND is used. Example: flashpeak-slimjet launches a process which called slimjet (by the X system). Example: When editor is launched via the x default, then its x name is its process name.
-#   [-w|--wantedTitle WANTED_TITLE] # further reduces matches according to extended regular expression WANTED_TITLE. Needed when eval opens a specific file.
+#   [-m|--main PROCESS_NAME] # Main process name extended regular expression (for when the main window can be closed).
+#   [-n|--name PROCESS_NAME] # Process name extended regular expression. Multiple occurrences build (...|...). COMMAND is added to the list. Example: flashpeak-slimjet launches a process which called slimjet (by the X system). Example: When terminator is launched via x-terminal-emulator, then its x-terminal-emulator name is its process name.
+#   [-t|--title TITLE] # further reduces matches according to tile matching extended regular expression TITLE. Needed when the command opens a specific file.
 #   [-v|--verbose] # use to see window information which must be matched, what has been matched etcn.
 #   COMMAND # Appended to PROCESS_NAME.
 #   [COMMAND_ARGUMENTS] # COMMAND COMMAND_ARGUMENTS is assumed to create a newly focused window.
 #
-# If available, raise next window matching PROCESS_NAME and WANTED_TITLE.
+# If available, raise next window matching PROCESS_NAME and WINDOW_TITLE.
 # If at last matched window and COUNT allows, then create a new window via COMMAND COMMAND_ARGUMENTS.
 # If available, then raise first matching window.
 # Otherwise, create a new window via COMMAND COMMAND_ARGUMENTS.
@@ -42,8 +43,6 @@ else
 fi
 unset zInclude
 
-declare aWantsMainWindow # future expansion ??? past error ??? currently unused
-
 AppendRegexWith() { # VAR MATCH
    local -n zRegex="$1"
    if [[ -z "$zRegex" ]]; then
@@ -62,20 +61,21 @@ while [[ 0 != "$#" ]]; do
 		   Log "$eLogOption" "Setting processCount to ${1@Q}."
 		   COUNT="$1"
          ;;
-      -p|--processName)
+      -m|--main)
+         shift
+		   Log "$eLogOption" "Setting mainTitle to ${1@Q}."
+         AppendRegexWith MAIN_NAME "$1"
+         AppendRegexWith PROCESS_NAME "$1"
+         ;;
+      -n|--name)
          shift
 		   Log "$eLogOption" "Appending processNames with ${1@Q}."
          AppendRegexWith PROCESS_NAME "$1"
          ;;
-      -m|--mainTitle)
-         shift
-		   Log "$eLogOption" "Setting mainTitle to ${1@Q}."
-		   MAIN_TITLE="$1"
-         ;;
-      -w|--wantedTitle)
+      -t|--title)
          shift
 		   Log "$eLogOption" "Appending wantedTitles with ${1@Q}."
-         AppendRegexWith WANTED_TITLE "$1"
+         AppendRegexWith WINDOW_TITLE "$1"
          ;;
       -v|--verbose)
          TheLogLevel "$eLogAll"
@@ -109,10 +109,10 @@ zLikedCount=$(wc -l < <(printf "%s${zInfosLiked:+\n}" "$zInfosLiked"))
 Log "$eLogMile" "$zLikedCount windows named ${PROCESS_NAME@Q}:" "$zInfosLiked"
    
 # limit likes by desired window title
-if [[ "$WANTED_TITLE" ]]; then
-   zInfosLiked=$(grep -E '0x[[:xdigit:]]+ \"'"$WANTED_TITLE"'\": \(".*" ".*"\)' <<< "$zInfosLiked")
+if [[ "$WINDOW_TITLE" ]]; then
+   zInfosLiked=$(grep -E '0x[[:xdigit:]]+ \"'"$WINDOW_TITLE"'\": \(".*" ".*"\)' <<< "$zInfosLiked")
    zLikedCount=$(wc -l < <(printf "%s${zInfosLiked:+\n}" "$zInfosLiked"))
-   Log "$eLogMile" "$zLikedCount windows titled ${WANTED_TITLE@Q}:" "$zInfosLiked"
+   Log "$eLogMile" "$zLikedCount windows titled ${WINDOW_TITLE@Q}:" "$zInfosLiked"
 fi
 
 zIdFocus=$(printf '0x%x\n' "$(xdotool getwindowfocus)")
@@ -120,15 +120,24 @@ Log "$eLogMile" "Currently focused id: ${zIdFocus@Q}."
 
 zIdsLiked=$(cut -d' ' -f1  <<< "$zInfosLiked")
 
-if [[ "$aWantsMainWindow" ]]; then
-   : # aWantsMainWindow is declared, but never initialized so this never happens 
-elif [[ "$zIdsLiked" ]]; then
+if [[ "$zIdsLiked" ]]; then
    zFirstIndexLiked=$(grep "$zIdFocus" \
                            --fixed-strings \
                            --line-number \
                            --line-regexp \
                            --max-count=1 <<< "$zIdsLiked" | cut -d: -f1)
    if [[ "$zFirstIndexLiked" ]]; then # the currently focused window is liked
+      if [[ 0 != "$#" && "$MAIN_NAME" ]]; then
+         zInfosMain=$(grep -E '0x[[:xdigit:]]+ ".*": \((".*" )?"'"$MAIN_NAME"'"( ".*")?\)' <<< "$zInfos")
+         zInfosMainCount=$(wc -l < <(printf "%s${zInfosMain:+\n}" "$zInfosMain"))
+         Log "$eLogMile" "$zInfosMainCount Main Windows:" "$zInfosMain"
+         if [[ "${COUNT:-1}" -gt "$zInfosMainCount" ]]; then
+	         Log "$eLogMile" "Opening new main window via: ${*@Q}."
+            "${@}" & # ampersand to deal with processes that don't just end
+            disown -a # disown to deal with processes that don't let me end
+            exit ###########################################################
+         fi
+      fi
       if [[ 1 = "$zLikedCount" ]]; then # no next window to consider
          unset zNextIndexLiked
       elif [[ 1 = "$zFirstIndexLiked" ]]; then # window list has been auto-ordered, goto last match
@@ -154,19 +163,10 @@ If wmctrl cannot get the number of desktops, then the window manager needs resta
    fi
 fi
 
-# limit matching window list according to --mainTitle
-if [[ -z "$MAIN_TITLE" ]]; then
-   zInfosMain="$zInfosLiked"
-else
-	zInfosMain=$(grep -E '0x[[:xdigit:]]+ \"'"$MAIN_TITLE"'\"): \(".*" ".*"\)' <<< "$zInfosLiked")
-fi
-zInfosMainCount=$(wc -l < <(printf "%s${zInfosMain:+\n}" "$zInfosMain"))
-Log "$eLogMile" "$zInfosMainCount Main Windows:" "$zInfosMain"
 # open new window --processCount wants a new window
-if [[ "${COUNT:-1}" -gt "$zInfosMainCount" ]]; then
-	Log "$eLogMile" "Opening new main window via: ${*@Q}."
-	# shellcheck disable=SC2086 # Double quote to prevent globbing and word splitting.
-   eval "${@}" & # ampersand to deal with processes that don't just end
+if [[ 0 != "$#" && "${COUNT:-1}" -gt "$zLikedCount" ]]; then
+	Log "$eLogMile" "Opening new liked window via: ${*@Q}."
+   "${@}" & # ampersand to deal with processes that don't just end
    disown -a # disown to deal with processes that don't let me end
    exit ###########################################################
 fi

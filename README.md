@@ -20,8 +20,9 @@ focus -n x-terminal-emulator terminator
 * The -n allows the program to have another name.
 * Windows opened by managers via x-terminal-emumator are named x-terminal-emumator.
 
-focus -n thunderbird-default thunderbird
+focus -n thunderbird-default -m mail thunderbird
 * thunderbird claims its windows are opened by thunderbird-default.
+* thunderbird can have many windows open, but if the window named mail (the main window) is closed, -m causes it to be reopened via the command when looking for another thunderbird window.
 * Use -v to see what the options must be.
 
 focus -n Firefox-esr firefox-esr

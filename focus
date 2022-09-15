@@ -1,0 +1,182 @@
+#!/usr/bin/bash
+#
+# focus
+#   [-c|--processCount COUNT] # maximum number of processes to automatically start at once. Default 1 (0 will not start any new process (search only)).
+#   [-p|--processName PROCESS_NAME] # extended regular expression to match the process name. Multiple occurrences build (...|...). If PROCESS_NAME is used but produces no matches, COMMAND is used. Example: flashpeak-slimjet launches a process which called slimjet (by the X system). Example: When editor is launched via the x default, then its x name is its process name.
+#   [-w|--wantedTitle WANTED_TITLE] # further reduces matches according to extended regular expression WANTED_TITLE. Needed when eval opens a specific file.
+#   [-v|--verbose] # use to see window information which must be matched, what has been matched etcn.
+#   COMMAND # Appended to PROCESS_NAME.
+#   [COMMAND_ARGUMENTS] # COMMAND COMMAND_ARGUMENTS is assumed to create a newly focused window.
+#
+# If available, raise next window matching PROCESS_NAME and WANTED_TITLE.
+# If at last matched window and COUNT allows, then create a new window via COMMAND COMMAND_ARGUMENTS.
+# If available, then raise first matching window.
+# Otherwise, create a new window via COMMAND COMMAND_ARGUMENTS.
+#
+# shellcheck disable=SC2155 # Declare and assign separately to avoid masking return values.
+# shellcheck disable=SC2128 # Expanding an array without an index only gives the first element.
+
+########### STANDARD_INCLUSION
+[[ -z "$BASENAME" ]] && BASENAME=$(basename "$0")
+
+Error() { # [-q] CODE ERROR_LINE...
+   local zNoNotify
+   if [[ '-q' = "$1" ]]; then
+      zNoNotify="$1"
+      shift
+   fi
+   zError="!!! $(basename "$0"): Error "
+   zError+=$(printf '%s\n' "${@:2}")
+	[[ -z "$zNoNotify" ]] && notify-send "$zError"
+   >&2 printf '%s\n' "$zError"
+   [[ 0 != "$1" ]] && exit "$1"
+}
+
+declare zInclude=$(which log.)
+if [[ "$zInclude" ]]; then
+   # shellcheck source=/home/me/9/log.
+	. "$zInclude"
+else
+	>&2 printf '%s\n' "!!! $BASENAME: whereis did not find log module 'log.'.'"
+	exit 149
+fi
+unset zInclude
+
+declare aWantsMainWindow # future expansion ??? past error ??? currently unused
+
+AppendRegexWith() { # VAR MATCH
+   local -n zRegex="$1"
+   if [[ -z "$zRegex" ]]; then
+		zRegex="$2"
+   else
+      zRegex=${zRegex#\(}
+      zRegex=${zRegex%\)}
+      zRegex="($zRegex|$2)"
+   fi
+}
+
+while [[ 0 != "$#" ]]; do
+   case "$1" in
+      -c|--processCount)
+         shift
+		   Log "$eLogOption" "Setting processCount to ${1@Q}."
+		   COUNT="$1"
+         ;;
+      -p|--processName)
+         shift
+		   Log "$eLogOption" "Appending processNames with ${1@Q}."
+         AppendRegexWith PROCESS_NAME "$1"
+         ;;
+      -m|--mainTitle)
+         shift
+		   Log "$eLogOption" "Setting mainTitle to ${1@Q}."
+		   MAIN_TITLE="$1"
+         ;;
+      -w|--wantedTitle)
+         shift
+		   Log "$eLogOption" "Appending wantedTitles with ${1@Q}."
+         AppendRegexWith WANTED_TITLE "$1"
+         ;;
+      -v|--verbose)
+         TheLogLevel "$eLogAll"
+         ;;
+      -*) Log "$eLogError" "Unknown option ${1@Q}."
+		    exit 1
+          ;;
+      *) break
+	esac
+   shift
+done
+
+[[ "$1" ]] && AppendRegexWith PROCESS_NAME "$1" # also search for COMMAND
+
+# wmctrl + pid usage falls into problems which require window manager to be reboot.
+# xwininfo exposes entire tree which contains many undesired windows
+#  | grep grandchild depth (or deeper based upon indentation) assumed to be children of the window manager
+#  | grep exclude label lines
+#  | grep exclude no name -- leaving -- 0xid (main_name): ("name" "name") dimensions...
+#  | sed -- leaving -- 0xid "main_name": ("name" "name")
+zInfos=$(xwininfo -tree -root \
+				| grep -E '^        ' \
+				| grep -E '^[[:blank:]]+0x[[:xdigit:]]+' \
+				| grep -v '(has no name): ()' \
+			   | sed -E 's/^[[:blank:]]*(0x[[:xdigit:]]+ ".*": \(".*" ".*"\)).*/\1/')
+Log "$eLogMile" "$(wc -l < <(printf "%s${zInfos:+\n}" "$zInfos")) available windows:" "$zInfos"
+# like windows with desired process or command name
+[[ "$PROCESS_NAME" ]] \
+   && zInfosLiked=$(grep -E '0x[[:xdigit:]]+ ".*": \((".*" )?"'"$PROCESS_NAME"'"( ".*")?\)' <<< "$zInfos")
+zLikedCount=$(wc -l < <(printf "%s${zInfosLiked:+\n}" "$zInfosLiked"))
+Log "$eLogMile" "$zLikedCount windows named ${PROCESS_NAME@Q}:" "$zInfosLiked"
+   
+# limit likes by desired window title
+if [[ "$WANTED_TITLE" ]]; then
+   zInfosLiked=$(grep -E '0x[[:xdigit:]]+ \"'"$WANTED_TITLE"'\": \(".*" ".*"\)' <<< "$zInfosLiked")
+   zLikedCount=$(wc -l < <(printf "%s${zInfosLiked:+\n}" "$zInfosLiked"))
+   Log "$eLogMile" "$zLikedCount windows titled ${WANTED_TITLE@Q}:" "$zInfosLiked"
+fi
+
+zIdFocus=$(printf '0x%x\n' "$(xdotool getwindowfocus)")
+Log "$eLogMile" "Currently focused id: ${zIdFocus@Q}."
+
+zIdsLiked=$(cut -d' ' -f1  <<< "$zInfosLiked")
+
+if [[ "$aWantsMainWindow" ]]; then
+   : # aWantsMainWindow is declared, but never initialized so this never happens 
+elif [[ "$zIdsLiked" ]]; then
+   zFirstIndexLiked=$(grep "$zIdFocus" \
+                           --fixed-strings \
+                           --line-number \
+                           --line-regexp \
+                           --max-count=1 <<< "$zIdsLiked" | cut -d: -f1)
+   if [[ "$zFirstIndexLiked" ]]; then # the currently focused window is liked
+      if [[ 1 = "$zLikedCount" ]]; then # no next window to consider
+         unset zNextIndexLiked
+      elif [[ 1 = "$zFirstIndexLiked" ]]; then # window list has been auto-ordered, goto last match
+         zNextIndexLiked="$zLikedCount"
+      elif [[ "$zFirstIndexLiked" -lt "$zLikedCount" ]]; then
+         zNextIndexLiked=$(( zFirstIndexLiked + 1 ))
+      else # window list is not yet auto-ordered, goto next match
+         zNextIndexLiked=1
+      fi
+   else
+      zNextIndexLiked=1
+   fi
+	zNextIdLiked=$(sed "$zNextIndexLiked!d" <<< "$zIdsLiked")
+   if [[ "$zNextIdLiked" ]]; then
+		Log "$eLogMile" "Next matching id: ${zNextIdLiked@Q}."
+      zError=$(wmctrl -iR "$zNextIdLiked" 1>/dev/null 2>&1)
+      zErrorCode="$?"
+      if [[ 0 != "$zErrorCode" ]]; then
+         Error 1 "wmctrl code $zErrorCode: $zError
+If wmctrl cannot get the number of desktops, then the window manager needs restarted."
+		fi
+		exit ############################################################################
+   fi
+fi
+
+# limit matching window list according to --mainTitle
+if [[ -z "$MAIN_TITLE" ]]; then
+   zInfosMain="$zInfosLiked"
+else
+	zInfosMain=$(grep -E '0x[[:xdigit:]]+ \"'"$MAIN_TITLE"'\"): \(".*" ".*"\)' <<< "$zInfosLiked")
+fi
+zInfosMainCount=$(wc -l < <(printf "%s${zInfosMain:+\n}" "$zInfosMain"))
+Log "$eLogMile" "$zInfosMainCount Main Windows:" "$zInfosMain"
+# open new window --processCount wants a new window
+if [[ "${COUNT:-1}" -gt "$zInfosMainCount" ]]; then
+	Log "$eLogMile" "Opening new main window via: ${*@Q}."
+	# shellcheck disable=SC2086 # Double quote to prevent globbing and word splitting.
+   eval "${@}" & # ampersand to deal with processes that don't just end
+   disown -a # disown to deal with processes that don't let me end
+   exit ###########################################################
+fi
+
+# raise first matching window
+zNextIdLiked=$(head -n1 <<< "$zIdsLiked")
+if [[ -z "$zNextIdLiked" ]]; then
+   Error -q 1 "Did not locate matching window or attempt ${*@Q}."
+else
+   Log "$eLogMile" "Wrapping to first matching id: ${zNextIdLiked@Q}."
+   wmctrl -iR "$zNextIdLiked"
+   exit ####################
+fi

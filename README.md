@@ -1,4 +1,4 @@
-# focus (: simple pride and joy :)
+# focus (: simplistc user joy :)
 Very small window switcher and program starter written in bash.
 
 ## focus should be the most used program by any keyboard user.
